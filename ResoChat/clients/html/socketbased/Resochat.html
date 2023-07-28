@@ -1,0 +1,1958 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <!-- Style of main page -->
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Style for main div */
+        #main {
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* Style for left menu div */
+        #left_menu {
+            background-color: rgb(46, 46, 46);
+            float: left;
+            width: 20vw;
+            height: 100vh;
+        }
+
+        /* Style for right menu div */
+        #right_menu {
+            background-color: rgb(57, 57, 57);
+            float: right;
+            width: 80vw;
+            height: 100vh;
+            padding: 0px !important;
+        }
+
+        #add_room_button {
+            width: 100%;
+            font-size: 1.6em;
+            padding-top: 10px;
+            text-align: center;
+            font-weight: bolder;
+            padding-bottom: 10px;
+            font-family: sans-serif;
+            text-transform: uppercase;
+            color: rgb(255, 255, 255);
+            background-color: rgb(0, 0, 0);
+            letter-spacing: 0.2em;
+        }
+
+        #create_room_button {
+            margin-top: 0.3vh;
+            width: 100%;
+            font-size: 1.6em;
+            padding-top: 10px;
+            text-align: center;
+            font-weight: bolder;
+            padding-bottom: 10px;
+            font-family: sans-serif;
+            text-transform: uppercase;
+            color: rgb(255, 255, 255);
+            background-color: rgb(0, 0, 0);
+            letter-spacing: 0.2em;
+        }
+
+        #add_room_button:hover {
+            background-color: rgb(119, 119, 119);
+            cursor: pointer;
+        }
+
+        #create_room_button:hover {
+            background-color: rgb(119, 119, 119);
+            cursor: pointer;
+        }
+
+        #error_text_span {
+            color: white;
+        }
+
+        .room_left_menu_div {
+            width: 100%;
+            background-color: rgba(255, 255, 255, 0.7);
+            margin-top: 0.2vh;
+            margin-bottom: 0.2vh;
+            padding-top: 0.2vh;
+            padding-bottom: 0.2vh;
+        }
+
+        .room_left_menu_div:hover {
+            background-color: aliceblue;
+            cursor: pointer;
+        }
+
+        #rooms_divs_section {
+            margin-top: 0.5vh;
+            width: 100%;
+            height: 20vh;
+            background-color: rgb(17, 7, 7);
+        }
+
+        #room_data_div {
+            width: 100%;
+            padding-top: 1vh;
+            padding-bottom: 1vh;
+            background-color: white;
+        }
+
+        .message_div {
+            width: 100%;
+            background-color: rgba(255, 255, 255, 0.6);
+            margin-top: 0.2vh;
+            margin-bottom: 0.2vh;
+        }
+
+        #sender_div {
+            width: 100%;
+            background-color: aqua;
+            margin-top: 5vh;
+        }
+
+        #message_input {
+            width: 70%;
+            float: left;
+        }
+
+        #message_send_button {
+            width: 29%;
+            float: right;
+        }
+    </style>
+
+    <!-- Style for resizer -->
+    <style>
+        #main {
+            display: flex;
+        }
+
+        #left_menu {
+            width: 333px;
+            height: 100%;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        #resizer {
+            width: 3px;
+            top: 0;
+            right: 0;
+            cursor: col-resize;
+            height: 100%;
+            position: absolute;
+        }
+
+        #right_menu {
+            flex-grow: 1;
+            padding: 3% 22px;
+            text-align: center;
+        }
+
+        #messages_div {
+            height: 70vh !important;
+            overflow: auto;
+        }
+
+        #sender_div {
+            display: none;
+        }
+    </style>
+
+    <!-- Title -->
+    <title>Resochat - HTML Client</title>
+
+
+</head>
+
+<body>
+    <div id="main">
+        <div id="left_menu">
+            <div id="add_room_button" onclick="add_room_button_pressed();">add</div>
+            <div id="create_room_button" onclick="create_room_button_pressed();">create</div>
+            <div id="rooms_divs_section"></div>
+            <div id="resizer"></div>
+        </div>
+        <div id="right_menu">
+            <div id="data_div"></div>
+            <div id="messages_div"></div>
+            <div id="sender_div">
+                <input type="text" id="message_input">
+                <button type="submit" id="message_send_button" onclick="send_message_button_pressed()">Send</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+
+        // Variables for saving global variables
+        var default_url = "127.0.0.1:2419";
+        var sockets_cache = {};
+        var default_nickname = `Someone_${Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000}`;
+        var selected_room_index = -1;
+        var rooms = {
+            "rooms": {
+
+            },
+            "amount": 0,
+        }
+
+        start_room_data_updater();
+        start_room_messages_updater();
+
+        // Function for sending message
+        function send_message_button_pressed() {
+            let message = document.getElementById("message_input");
+            let message_value = message.value;
+            message.value = "";
+            rooms["rooms"][selected_room_index]["room"].send_message(rooms["rooms"][selected_room_index]["nickname"], message_value);
+        }
+
+        // Function for changing selected room
+        function set_selected_room(index){
+            selected_room_index = index;
+            rooms["rooms"][selected_room_index]["last_displayed"] = 0;
+            document.getElementById("messages_div").innerHTML = "";
+
+        }
+
+        // Function for adding room to left menu
+        function add_room_to_left_menu(index, url, seed, password, data) {
+            let room_div = `
+            <div class="room_left_menu_div" id="${index}" onclick="set_selected_room(${index})">
+                <span class="room_name_in_left_menu">${data["name"]}</span><br>
+                <span class="room_url_in_left_menu">${url}</span>
+                <span class="room_seed_in_left_menu">${seed}</span>
+            </div>
+            `
+            document.getElementById("rooms_divs_section").innerHTML += room_div;
+        }
+
+        // Function for updating room data div
+        function update_room_data_div(index) {
+            let room_data_div = document.getElementById("data_div");
+            room_data_div.innerHTML = `
+                <div id="room_data_div">
+                    <span id="room_data_name_span">${rooms["rooms"][index]["data"]["name"]}</span>
+                    <br>
+                    <span id="room_data_description_span">${rooms["rooms"][index]["data"]["description"]}</span>
+                    <span id="room_data_url_span">${rooms["rooms"][index]["room"]["url"]}</span>
+                    <span id="room_data_seed_span">${rooms["rooms"][index]["room"]["seed"]}</span>
+                    <span id="room_data_nickname_information_span">You are here as: </span>
+                    <span id="room_data_nickname_span">${rooms["rooms"][index]["nickname"]}</span>
+                    <div>
+                        <button id="change_seed_button" onclick="change_seed_button()">Change seed</button>  
+                        <button id="change_name_button" onclick="change_name_button()">Change name</button>  
+                        <button id="change_description_button" onclick="change_description_button()">Change description</button>  
+                        <button id="change_nickname_button" onclick="change_nickname_button()">Change nickname</button>  
+                        <button id="clear_nicknames_button" onclick="clear_nicknames()">Clear nicknames</button>  
+                        <button id="clear_messages_button" onclick="clear_messages()">Clear messages</button>  
+                    </div>
+                </div> 
+            `;
+        }
+
+        // Function for changing seed button
+        function change_seed_button(){
+            const seed = prompt("Enter new seed of room")
+            if (seed === null) { return 0; };
+            rooms["rooms"][selected_room_index]["room"].change_seed(seed)
+        }
+        
+        // Function for changing name button
+        function change_name_button(){
+            const name = prompt("Enter new name of room")
+            if (name === null) { return 0; };
+            rooms["rooms"][selected_room_index]["room"].change_name(name)
+        }
+
+        // Function for changing description button
+        function change_description_button(){
+            const description = prompt("Enter new description of room")
+            if (description === null) { return 0; };
+            rooms["rooms"][selected_room_index]["room"].change_description(description)
+        }
+
+        // Function for changing nickname button
+        function change_nickname_button(){
+            const nickname = prompt("Enter new nickname of room")
+            if (nickname === null) { return 0; };
+            rooms["rooms"][selected_room_index]["room"].setup_nickname(nickname)
+            rooms["rooms"][selected_room_index]["nickname"] = nickname;
+        }
+
+        // Function for clearing nicknames
+        function clear_nicknames(){
+            const asking = confirm("Are you sure?")
+            if (asking){
+                rooms["rooms"][selected_room_index]["room"].clear_nicknames()
+            }
+        }
+
+        // Function for clearing messages
+        function clear_messages(){
+            const asking = confirm("Are you sure?")
+            if (asking){
+                rooms["rooms"][selected_room_index]["room"].clear_messages().then(()=>{
+                    rooms["rooms"][selected_room_index]["last_displayed"] = 0;
+                    document.getElementById("messages_div").innerHTML = "";
+                })
+            }
+        }
+
+        // Function for updating room data
+        function room_data_updater(index, calling_index) {
+            if (calling_index % 2 === 0) {
+                rooms["rooms"][index]["room"].get_room_data().then(
+                    (data) => {
+                        if (data === rooms["rooms"][index]["room"].fetch_error_code) {
+                            set_fetal_error("Error while connecting to the server")
+                        }
+                        else if (data === rooms["rooms"][index]["room"].error_code) {
+                            set_fetal_error("Error in server")
+                        }
+                        else {
+                            rooms["rooms"][index]["data"] = data;
+                            update_room_data_div(index);
+                        }
+                    }
+                )
+            }
+        }
+
+        // Function for updting room messages div
+        function update_room_messages_div(index) {
+            let messages_div = document.getElementById("messages_div");
+            let new_messages = ``;
+            for (let i = rooms["rooms"][index]["messages"]["messages"].length - 1 - rooms["rooms"][index]["last_displayed"]; i >= 0; i--) {
+                let message = rooms["rooms"][index]["messages"]["messages"][i]
+                new_messages += `
+                    <div class="message_div"> 
+                        <span>${message[0]}</span>
+                        <span>by ${message[1]}</span>
+                    </div>
+                `
+            }
+            messages_div.innerHTML += new_messages;
+        }
+
+        // Function for updating room messages
+        function room_messages_updater(index, nickname, calling_index) {
+            document.getElementById("sender_div").style.display = "block";
+            if (calling_index % 2 === 0) {
+                if (rooms["rooms"][index]["data"]["nicknames"][nickname] === undefined) {
+                    rooms["rooms"][index]["room"].setup_nickname(nickname);
+                }
+                if (rooms["rooms"][index]["data"]["nicknames"][nickname] !== undefined && (rooms["rooms"][index]["data"]["messages_count"] > rooms["rooms"][index]["last_displayed"])) {
+                    rooms["rooms"][index]["room"].get_last_n_messages(100).then(
+                        (data) => {
+                            if (data === rooms["rooms"][index]["room"].fetch_error_code) {
+                                set_fetal_error("Error while connecting to the server")
+                            }
+                            else if (data === rooms["rooms"][index]["room"].error_code) {
+                                set_fetal_error("Error in server")
+                            }
+                            else {
+                                rooms["rooms"][index]["messages"] = data;
+                                rooms["rooms"][index]["data"]["nicknames"][nickname]["last_read"] = rooms["rooms"][index]["data"]["messages_count"];
+                                rooms["rooms"][index]["room"].mark_all_as_read(nickname);
+                                update_room_messages_div(index);
+                                rooms["rooms"][index]["last_displayed"] = rooms["rooms"][index]["data"]["nicknames"][nickname]["last_read"];
+                            }
+                        }
+                    )
+                }
+            }
+        }
+
+        // Function for starting room data updater
+        function start_room_data_updater() {
+            let calling_index = 0;
+            setInterval(() => {
+                if (selected_room_index !== -1) {
+                    room_data_updater(selected_room_index, calling_index++)
+                }
+            }, 1000);
+        }
+
+        // Function for starting room messages updater
+        function start_room_messages_updater() {
+            let calling_index = 0;
+            setInterval(() => {
+                if (selected_room_index !== -1) {
+                    room_messages_updater(selected_room_index, rooms["rooms"][selected_room_index]["nickname"], calling_index++)
+                }
+            }, 1000);
+        }
+
+        // Function for adding room
+        function add_room(url, seed, password, nickname) {
+            let room = new Resochat(url, seed, password);
+            setTimeout(() => {
+                room.exists().then(
+                    (data) => {
+                        document.getElementById("messages_div").innerHTML = "";
+                        if (data === room.fetch_error_code) {
+                            set_fetal_error("Error while connecting to the server")
+                        }
+                        else if (data === room.error_code) {
+                            set_fetal_error("Error in server")
+                        }
+                        else if (data === false) {
+                            set_fetal_error("Room with given seed and password does not exist")
+                        }
+                        else if (data === true) {
+                            room.get_room_data().then(
+                                (data) => {
+                                    if (data === room.fetch_error_code) {
+                                        set_fetal_error("Error while connecting to the server")
+                                    }
+                                    else if (data === room.error_code) {
+                                        set_fetal_error("Error in server")
+                                    }
+                                    else {
+                                        let index = ++rooms["amount"]
+                                        rooms["rooms"][index] = {
+                                            "room": room,
+                                            "nickname": nickname,
+                                            "last_displayed": 0,
+                                            "status": undefined
+                                        };
+                                        selected_room_index = index;
+                                        add_room_to_left_menu(index, url, seed, password, data);
+                                        rooms["rooms"][index]["data"] = data;
+                                        // start_room_displayer(index);
+
+                                        room.setup_nickname(nickname);
+                                    }
+                                }
+                            )
+                        }
+                        else {
+                            set_fetal_error("Error in server")
+                        }
+                    }
+                )
+            }, 2000)
+        }
+
+        // Function for updating status data
+        function set_fetal_error(data) {
+            let data_div = document.getElementById("data_div")
+            data_div.innerHTML = `
+                <span id="error_text_span">${data}</span>
+            `;
+        }
+
+        // Function which will be run when create button is pressed
+        function create_room_button_pressed() {
+            const url = prompt("Enter server address", default_url === undefined ? "" : default_url)
+            if (url === null) { return 0; };
+            const seed = prompt("Enter seed for new room")
+            if (seed === null) { return 0; };
+            const password = prompt("Enter password for new room")
+            if (password === null) { return 0; };
+            const name = prompt("Enter name of new room (keep empty for default name)")
+            if (name === null) { return 0; };
+            const description = prompt("Enter description of new room (keep empty for default description)")
+            if (description === null) { return 0; };
+            let nickname = prompt("Enter your nickname inside this room (press enter for keeping default)", default_nickname)
+            default_nickname = nickname
+            if (nickname === null) { return 0; };
+
+            // Defining and creating room
+            let room = new Resochat(url, seed, password);
+            setTimeout(() => {
+                room.create(name, description).then((data) => {
+                    if (data === room.error_code) {
+                        set_fetal_error("Error while creating room");
+                        room = null;
+                    }
+                    else if (data === room.fetch_error_code) {
+                        set_fetal_error("Error while connecting to server");
+                        room = null;
+                    }
+                    else if (data === room.success_code){
+                        add_room(url, seed, password, nickname);
+                    }
+                    default_url = url;
+                }
+                );
+            }, 2000)
+        }
+
+        // Function which will be run when add button is pressed
+        function add_room_button_pressed() {
+            const url = prompt("Enter server address", default_url === undefined ? "" : default_url)
+            if (url === null) { return 0; };
+            const seed = prompt("Enter seed for new room")
+            if (seed === null) { return 0; };
+            const password = prompt("Enter password for new room")
+            if (password === null) { return 0; };
+            let nickname = prompt("Enter your nickname inside this room (press enter for keeping default)", default_nickname)
+            default_nickname = nickname;
+            if (nickname === null) { return 0; };
+
+            // Calling function which will add new room to frontend
+            add_room(url, seed, password, nickname);
+        }
+    </script>
+
+    <!-- Script for resizer -->
+    <script>
+        var resizer = document.querySelector("#resizer");
+        var left_menu = document.querySelector("#left_menu");
+        function initResizerFn(resizer, left_menu) {
+            var x, w;
+            function rs_mousedownHandler(e) {
+                x = e.clientX;
+                var sbWidth = window.getComputedStyle(left_menu).width;
+                w = parseInt(sbWidth, 10);
+                document.addEventListener("mousemove", rs_mousemoveHandler);
+                document.addEventListener("mouseup", rs_mouseupHandler);
+            }
+            function rs_mousemoveHandler(e) {
+                var dx = e.clientX - x;
+                var cw = w + dx;
+                if (cw < 700) {
+                    left_menu.style.width = `${cw}px`;
+                }
+            }
+            function rs_mouseupHandler() {
+                document.removeEventListener("mouseup", rs_mouseupHandler);
+                document.removeEventListener("mousemove", rs_mousemoveHandler);
+            }
+            resizer.addEventListener("mousedown", rs_mousedownHandler);
+        }
+        initResizerFn(resizer, left_menu);
+    </script>
+
+    <!-- Library script -->
+    <script>
+        // Class where all methods of resochat are included
+        class Resochat {
+
+            // Defining static codes
+            empty_code = `(:~empty~:)`;
+            error_code = `(:~error~:)`;
+            success_code = `(:~success~:)`;
+            fetch_error_code = `(:~fetcherror~:)`;
+
+            // Defining variables for server
+            url;
+            socket;
+            server_up = false;
+
+            // Defining default variables
+            seed;
+            password;
+
+            // Function for waiting to the response of our message
+            async #await_response(id) {
+                if (sockets_cache[id.toString()] !== undefined) {
+                    let response = sockets_cache[id.toString()];
+                    delete sockets_cache[id.toString()];
+                    return response;
+                }
+                let response_promise = () => {
+                    return new Promise((resolve, reject) => {
+                        this.socket.onmessage = (event) => {
+                            const response = event.data;
+                            if (Object.keys(JSON.parse(response))[0] == id) {
+                                resolve(JSON.parse(response)[id]);
+                            }
+                            else {
+                                sockets_cache[Object.keys(JSON.parse(response))[0].toString()] = JSON.parse(response)[Object.keys(JSON.parse(response))[0]];
+                            }
+                        };
+                        for (let i = 0; i < 5; i++) {
+                            setTimeout(() => {
+                                if (sockets_cache[id] !== undefined) {
+                                    let response = sockets_cache[id.toString()];
+                                    delete sockets_cache[id.toString()];
+                                    resolve(response)
+                                }
+                            }, 1000);
+                        }
+                    })
+                }
+                let message = await response_promise();
+                return message;
+            }
+
+            // Function for putting promises for checking when server is up and down
+            #setup_socket() {
+                try {
+                    this.socket = new WebSocket(`ws://${this.url}`)
+                } catch (error) {
+                    this.server_up = false;
+                    return this.fetch_error_code;
+                }
+                this.socket.onopen = () => {
+                    this.server_up = true;
+                };
+
+                this.socket.onerror = () => {
+                    this.server_up = false;
+                };
+
+                this.socket.onclose = () => {
+                    this.server_up = false;
+                    this.#setup_socket();
+                };
+            }
+
+            // Constructor for setting up seed and password
+            constructor(url, seed, password) {
+
+                // Formatting url if it is needed
+                url = url.replace(/\/$/, '');
+
+                // Setting server variables
+                this.url = url;
+
+                // Setting variables
+                this.seed = seed;
+                this.password = password;
+
+                this.#setup_socket();
+
+                // Returning true if everything is okay
+                return true;
+            }
+
+            // Method for updating seed and password
+            update(url, seed, password) {
+
+                // Formatting url if it is needed
+                url = url.replace(/\/$/, '');
+
+                // Updating variables if they are not undefined
+                if (url !== undefined) { this.url = url; };
+                if (seed !== undefined) { this.seed = seed; };
+                if (password !== undefined) { this.password = password; };
+
+                // Updating socket server
+                this.#setup_socket();
+
+                // Returning true if everything is okay
+                return true;
+            }
+
+            // Method for chekcing if server is up
+            ping() {
+                return this.server_up;
+            }
+
+            // Method for checking if room with given seed and password exists or not
+            async exists() {
+                // Checking connection with server
+                if (this.server_up !== true) {
+                    return this.fetch_error_code;
+                }
+
+                // Formatting data
+                let id = Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000;
+                let data = {
+                    "id": id,
+                    "action": "exists",
+                    "options": {
+                        "seed": this.seed,
+                        "password": this.password
+                    }
+                }
+                let stringified_data = JSON.stringify(data);
+
+                // Sending request
+                this.socket.send(stringified_data)
+
+                // Waiting for response from server
+                let response = await this.#await_response(id);
+
+                // Formatting feedback
+                let feedback;
+                if (response === this.error_code) {
+                    feedback = this.error_code;
+                }
+                if (response === "true") {
+                    feedback = true;
+                }
+                else if (response === "false") {
+                    feedback = false;
+                }
+                else {
+                    feedback = this.error_code;
+                }
+
+                // Returning formatted feedback
+                return feedback;
+            }
+
+            // Method for creating room with given parameters
+            async create(name, description) {
+
+                // Checking connection with server
+                if (this.server_up !== true) {
+                    return this.fetch_error_code;
+                }
+
+                // Formatting data
+                let id = Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000;
+                let data = {
+                    "id": id,
+                    "action": "create",
+                    "options": {
+                        "seed": this.seed,
+                        "password": this.password,
+                        "name": name,
+                        "description": description,
+                    }
+                }
+                let stringified_data = JSON.stringify(data);
+
+                // Sending request
+                this.socket.send(stringified_data)
+
+                // Waiting for response from server
+                let response = await this.#await_response(id);
+
+                // Formatting feedback
+                let feedback;
+                if (response === this.error_code) {
+                    feedback = this.error_code;
+                }
+                if (response === this.fetch_error_code) {
+                    feedback = this.fetch_error_code;
+                }
+                else if (response === this.success_code) {
+                    feedback = this.success_code;
+                }
+                else {
+                    feedback = this.error_code;
+                }
+
+                // Returning formatted feedback
+                return feedback;
+            }
+
+            // Method for enabling room
+            async enable() {
+
+                // Checking connection with server
+                if (this.server_up !== true) {
+                    return this.fetch_error_code;
+                }
+
+                // Formatting data
+                let id = Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000;
+                let data = {
+                    "id": id,
+                    "action": "enable",
+                    "options": {
+                        "seed": this.seed,
+                        "password": this.password,
+                    }
+                }
+                let stringified_data = JSON.stringify(data);
+
+                // Sending request
+                this.socket.send(stringified_data)
+
+                // Waiting for response from server
+                let response = await this.#await_response(id);
+
+                // Formatting feedback
+                let feedback;
+                if (response === this.error_code) {
+                    feedback = this.error_code;
+                }
+                if (response === this.fetch_error_code) {
+                    feedback = this.fetch_error_code;
+                }
+                else if (response === this.success_code) {
+                    feedback = this.success_code;
+                }
+                else {
+                    feedback = this.error_code;
+                }
+
+                // Returning formatted feedback
+                return feedback;
+            }
+
+            // Method for disabling room
+            async disable() {
+
+                // Checking connection with server
+                if (this.server_up !== true) {
+                    return this.fetch_error_code;
+                }
+
+                // Formatting data
+                let id = Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000;
+                let data = {
+                    "id": id,
+                    "action": "disable",
+                    "options": {
+                        "seed": this.seed,
+                        "password": this.password,
+                    }
+                }
+                let stringified_data = JSON.stringify(data);
+
+                // Sending request
+                this.socket.send(stringified_data)
+
+                // Waiting for response from server
+                let response = await this.#await_response(id);
+
+                // Formatting feedback
+                let feedback;
+                if (response === this.error_code) {
+                    feedback = this.error_code;
+                }
+                if (response === this.fetch_error_code) {
+                    feedback = this.fetch_error_code;
+                }
+                else if (response === this.success_code) {
+                    feedback = this.success_code;
+                }
+                else {
+                    feedback = this.error_code;
+                }
+
+                // Returning formatted feedback
+                return feedback;
+            }
+
+            // Method for destroying room
+            async destroy() {
+
+                // Checking connection with server
+                if (this.server_up !== true) {
+                    return this.fetch_error_code;
+                }
+
+                // Formatting data
+                let id = Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000;
+                let data = {
+                    "id": id,
+                    "action": "destroy",
+                    "options": {
+                        "seed": this.seed,
+                        "password": this.password,
+                    }
+                }
+                let stringified_data = JSON.stringify(data);
+
+                // Sending request
+                this.socket.send(stringified_data)
+
+                // Waiting for response from server
+                let response = await this.#await_response(id);
+
+                // Formatting feedback
+                let feedback;
+                if (response === this.error_code) {
+                    feedback = this.error_code;
+                }
+                if (response === this.fetch_error_code) {
+                    feedback = this.fetch_error_code;
+                }
+                else if (response === this.success_code) {
+                    feedback = this.success_code;
+                }
+                else {
+                    feedback = this.error_code;
+                }
+
+                // Returning formatted feedback
+                return feedback;
+            }
+
+            // Method for changing room name
+            async change_name(name) {
+
+                // Checking connection with server
+                if (this.server_up !== true) {
+                    return this.fetch_error_code;
+                }
+
+                // Formatting data
+                let id = Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000;
+                let data = {
+                    "id": id,
+                    "action": "change_name",
+                    "options": {
+                        "seed": this.seed,
+                        "password": this.password,
+                        "name": name,
+                    }
+                }
+                let stringified_data = JSON.stringify(data);
+
+                // Sending request
+                this.socket.send(stringified_data)
+
+                // Waiting for response from server
+                let response = await this.#await_response(id);
+
+                // Formatting feedback
+                let feedback;
+                if (response === this.error_code) {
+                    feedback = this.error_code;
+                }
+                if (response === this.fetch_error_code) {
+                    feedback = this.fetch_error_code;
+                }
+                else if (response === this.success_code) {
+                    feedback = this.success_code;
+                }
+                else {
+                    feedback = this.error_code;
+                }
+
+                // Returning formatted feedback
+                return feedback;
+            }
+
+            // Method for changing room description
+            async change_description(description) {
+
+                // Checking connection with server
+                if (this.server_up !== true) {
+                    return this.fetch_error_code;
+                }
+
+                // Formatting data
+                let id = Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000;
+                let data = {
+                    "id": id,
+                    "action": "change_description",
+                    "options": {
+                        "seed": this.seed,
+                        "password": this.password,
+                        "description": description,
+                    }
+                }
+                let stringified_data = JSON.stringify(data);
+
+                // Sending request
+                this.socket.send(stringified_data)
+
+                // Waiting for response from server
+                let response = await this.#await_response(id);
+
+                // Formatting feedback
+                let feedback;
+                if (response === this.error_code) {
+                    feedback = this.error_code;
+                }
+                if (response === this.fetch_error_code) {
+                    feedback = this.fetch_error_code;
+                }
+                else if (response === this.success_code) {
+                    feedback = this.success_code;
+                }
+                else {
+                    feedback = this.error_code;
+                }
+
+                // Returning formatted feedback
+                return feedback;
+            }
+
+            // Method for updating room data
+            async update_room_data(name, description) {
+
+                // Checking connection with server
+                if (this.server_up !== true) {
+                    return this.fetch_error_code;
+                }
+
+                // Formatting data
+                let id = Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000;
+                let data = {
+                    "id": id,
+                    "action": "update_data",
+                    "options": {
+                        "seed": this.seed,
+                        "password": this.password,
+                        "name": name,
+                        "description": description,
+                    }
+                }
+                let stringified_data = JSON.stringify(data);
+
+                // Sending request
+                this.socket.send(stringified_data)
+
+                // Waiting for response from server
+                let response = await this.#await_response(id);
+
+                // Formatting feedback
+                let feedback;
+                if (response === this.error_code) {
+                    feedback = this.error_code;
+                }
+                if (response === this.fetch_error_code) {
+                    feedback = this.fetch_error_code;
+                }
+                else if (response === this.success_code) {
+                    feedback = this.success_code;
+                }
+                else {
+                    feedback = this.error_code;
+                }
+
+                // Returning formatted feedback
+                return feedback;
+            }
+
+            // Method for changing room seed
+            async change_seed(new_seed) {
+
+                // Checking connection with server
+                if (this.server_up !== true) {
+                    return this.fetch_error_code;
+                }
+
+                // Formatting data
+                let id = Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000;
+                let data = {
+                    "id": id,
+                    "action": "change_seed",
+                    "options": {
+                        "seed": this.seed,
+                        "password": this.password,
+                        "new_seed": new_seed,
+                    }
+                }
+                let stringified_data = JSON.stringify(data);
+
+                // Sending request
+                this.socket.send(stringified_data)
+
+                // Waiting for response from server
+                let response = await this.#await_response(id);
+
+                // Formatting feedback
+                let feedback;
+                if (response === this.error_code) {
+                    feedback = this.error_code;
+                }
+                if (response === this.fetch_error_code) {
+                    feedback = this.fetch_error_code;
+                }
+                else if (response === this.success_code) {
+                    feedback = this.success_code;
+                }
+                else {
+                    feedback = this.error_code;
+                }
+
+                // Updating crucial properties of room
+                if (feedback === this.success_code) {
+                    this.seed = new_seed
+                }
+
+                // Returning formatted feedback
+                return feedback;
+            }
+
+            // Method for changing room password
+            async change_password(new_password) {
+
+                // Checking connection with server
+                if (this.server_up !== true) {
+                    return this.fetch_error_code;
+                }
+
+                // Formatting data
+                let id = Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000;
+                let data = {
+                    "id": id,
+                    "action": "change_password",
+                    "options": {
+                        "seed": this.seed,
+                        "password": this.password,
+                        "new_password": new_password,
+                    }
+                }
+                let stringified_data = JSON.stringify(data);
+
+                // Sending request
+                this.socket.send(stringified_data)
+
+                // Waiting for response from server
+                let response = await this.#await_response(id);
+
+                // Formatting feedback
+                let feedback;
+                if (response === this.error_code) {
+                    feedback = this.error_code;
+                }
+                if (response === this.fetch_error_code) {
+                    feedback = this.fetch_error_code;
+                }
+                else if (response === this.success_code) {
+                    feedback = this.success_code;
+                }
+                else {
+                    feedback = this.error_code;
+                }
+
+                // Updating crucial properties of room
+                if (feedback === this.success_code) {
+                    this.password = new_password;
+                }
+
+                // Returning formatted feedback
+                return feedback;
+            }
+
+            // Method for setupping nickname
+            async setup_nickname(nickname) {
+
+                // Checking connection with server
+                if (this.server_up !== true) {
+                    return this.fetch_error_code;
+                }
+
+                // Formatting data
+                let id = Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000;
+                let data = {
+                    "id": id,
+                    "action": "setup_nickname",
+                    "options": {
+                        "seed": this.seed,
+                        "password": this.password,
+                        "nickname": nickname,
+                    }
+                }
+                let stringified_data = JSON.stringify(data);
+
+                // Sending request
+                this.socket.send(stringified_data)
+
+                // Waiting for response from server
+                let response = await this.#await_response(id);
+
+                // Formatting feedback
+                let feedback;
+                if (response === this.error_code) {
+                    feedback = this.error_code;
+                }
+                if (response === this.fetch_error_code) {
+                    feedback = this.fetch_error_code;
+                }
+                else if (response === this.success_code) {
+                    feedback = this.success_code;
+                }
+                else {
+                    feedback = this.error_code;
+                }
+
+                // Returning formatted feedback
+                return feedback;
+            }
+
+            // Method for clearing nicknames
+            async clear_nicknames() {
+
+                // Checking connection with server
+                if (this.server_up !== true) {
+                    return this.fetch_error_code;
+                }
+
+                // Formatting data
+                let id = Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000;
+                let data = {
+                    "id": id,
+                    "action": "clear_nicknames",
+                    "options": {
+                        "seed": this.seed,
+                        "password": this.password,
+                    }
+                }
+                let stringified_data = JSON.stringify(data);
+
+                // Sending request
+                this.socket.send(stringified_data)
+
+                // Waiting for response from server
+                let response = await this.#await_response(id);
+
+                // Formatting feedback
+                let feedback;
+                if (response === this.error_code) {
+                    feedback = this.error_code;
+                }
+                if (response === this.fetch_error_code) {
+                    feedback = this.fetch_error_code;
+                }
+                else if (response === this.success_code) {
+                    feedback = this.success_code;
+                }
+                else {
+                    feedback = this.error_code;
+                }
+
+                // Returning formatted feedback
+                return feedback;
+            }
+
+            // Method for sending message
+            async send_message(nickname, message, mark_read = true) {
+
+                // Formatting mark_read parameter
+                let mark_read_formatted;
+                if (mark_read === true || mark_read === 'true') { mark_read_formatted = true; }
+                else if (mark_read === false || mark_read === 'false') { mark_read_formatted = false; }
+                else { mark_read_formatted = true; };
+
+
+                // Checking connection with server
+                if (this.server_up !== true) {
+                    return this.fetch_error_code;
+                }
+
+                // Formatting data
+                let id = Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000;
+                let data = {
+                    "id": id,
+                    "action": "send_message",
+                    "options": {
+                        "seed": this.seed,
+                        "password": this.password,
+                        "nickname": nickname,
+                        "message": message,
+                        "mark_read": mark_read_formatted,
+                    }
+                }
+                let stringified_data = JSON.stringify(data);
+
+                // Sending request
+                this.socket.send(stringified_data)
+
+                // Waiting for response from server
+                let response = await this.#await_response(id);
+
+                // Formatting feedback
+                let feedback;
+                if (response === this.error_code) {
+                    feedback = this.error_code;
+                }
+                if (response === this.fetch_error_code) {
+                    feedback = this.fetch_error_code;
+                }
+                else if (response === this.success_code) {
+                    feedback = this.success_code;
+                }
+                else {
+                    feedback = this.error_code;
+                }
+
+                // Returning formatted feedback
+                return feedback;
+            }
+
+            // Method for marking next as read
+            async mark_next_as_read(nickname) {
+
+                // Checking connection with server
+                if (this.server_up !== true) {
+                    return this.fetch_error_code;
+                }
+
+                // Formatting data
+                let id = Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000;
+                let data = {
+                    "id": id,
+                    "action": "mark_next_as_read",
+                    "options": {
+                        "seed": this.seed,
+                        "password": this.password,
+                        "nickname": nickname,
+                    }
+                }
+                let stringified_data = JSON.stringify(data);
+
+                // Sending request
+                this.socket.send(stringified_data)
+
+                // Waiting for response from server
+                let response = await this.#await_response(id);
+
+                // Formatting feedback
+                let feedback;
+                if (response === this.error_code) {
+                    feedback = this.error_code;
+                }
+                if (response === this.fetch_error_code) {
+                    feedback = this.fetch_error_code;
+                }
+                else if (response === this.success_code) {
+                    feedback = this.success_code;
+                }
+                else {
+                    feedback = this.error_code;
+                }
+
+                // Returning formatted feedback
+                return feedback;
+            }
+
+            // Method for marking all as read
+            async mark_all_as_read(nickname) {
+
+                // Checking connection with server
+                if (this.server_up !== true) {
+                    return this.fetch_error_code;
+                }
+
+                // Formatting data
+                let id = Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000;
+                let data = {
+                    "id": id,
+                    "action": "mark_all_as_read",
+                    "options": {
+                        "seed": this.seed,
+                        "password": this.password,
+                        "nickname": nickname,
+                    }
+                }
+                let stringified_data = JSON.stringify(data);
+
+                // Sending request
+                this.socket.send(stringified_data)
+
+                // Waiting for response from server
+                let response = await this.#await_response(id);
+
+                // Formatting feedback
+                let feedback;
+                if (response === this.error_code) {
+                    feedback = this.error_code;
+                }
+                if (response === this.fetch_error_code) {
+                    feedback = this.fetch_error_code;
+                }
+                else if (response === this.success_code) {
+                    feedback = this.success_code;
+                }
+                else {
+                    feedback = this.error_code;
+                }
+
+                // Returning formatted feedback
+                return feedback;
+            }
+
+            // Method for clearing messages
+            async clear_messages() {
+
+                // Checking connection with server
+                if (this.server_up !== true) {
+                    return this.fetch_error_code;
+                }
+
+                // Formatting data
+                let id = Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000;
+                let data = {
+                    "id": id,
+                    "action": "clear_messages",
+                    "options": {
+                        "seed": this.seed,
+                        "password": this.password,
+                    }
+                }
+                let stringified_data = JSON.stringify(data);
+
+                // Sending request
+                this.socket.send(stringified_data)
+
+                // Waiting for response from server
+                let response = await this.#await_response(id);
+
+                // Formatting feedback
+                let feedback;
+                if (response === this.error_code) {
+                    feedback = this.error_code;
+                }
+                if (response === this.fetch_error_code) {
+                    feedback = this.fetch_error_code;
+                }
+                else if (response === this.success_code) {
+                    feedback = this.success_code;
+                }
+                else {
+                    feedback = this.error_code;
+                }
+
+                // Returning formatted feedback
+                return feedback;
+            }
+
+            // Method for getting room data
+            async get_room_data() {
+
+                // Checking connection with server
+                if (this.server_up !== true) {
+                    return this.fetch_error_code;
+                }
+
+                // Formatting data
+                let id = Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000;
+                let data = {
+                    "id": id,
+                    "action": "get_room_data",
+                    "options": {
+                        "seed": this.seed,
+                        "password": this.password,
+                    }
+                }
+                let stringified_data = JSON.stringify(data);
+
+                // Sending request
+                this.socket.send(stringified_data)
+
+                // Waiting for response from server
+                let response = await this.#await_response(id);
+
+                // Formatting feedback
+                let feedback;
+                if (response === this.error_code) {
+                    feedback = this.error_code;
+                }
+                if (response === this.fetch_error_code) {
+                    feedback = this.fetch_error_code;
+                }
+                else {
+                    try {
+                        feedback = JSON.parse(response);
+                    } catch (error) {
+                        feedback = response;
+                    }
+                }
+
+                // Returning formatted feedback
+                return feedback;
+            }
+
+            // Method for getting all messages
+            async get_all_messages(only_message = false) {
+
+                // Formatting mark_read parameter
+                let only_message_formatted;
+                if (only_message === true || only_message === 'true') { only_message_formatted = true; }
+                else if (only_message === false || only_message === 'false') { only_message_formatted = false; }
+                else { only_message_formatted = false; };
+
+                // Checking connection with server
+                if (this.server_up !== true) {
+                    return this.fetch_error_code;
+                }
+
+                // Formatting data
+                let id = Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000;
+                let data = {
+                    "id": id,
+                    "action": "get_all_messages",
+                    "options": {
+                        "seed": this.seed,
+                        "password": this.password,
+                        "only_message": only_message_formatted,
+                    }
+                }
+                let stringified_data = JSON.stringify(data);
+
+                // Sending request
+                this.socket.send(stringified_data)
+
+                // Waiting for response from server
+                let response = await this.#await_response(id);
+
+                // Formatting feedback
+                let feedback;
+                if (response === this.error_code) {
+                    feedback = this.error_code;
+                }
+                if (response === this.fetch_error_code) {
+                    feedback = this.fetch_error_code;
+                }
+                else {
+                    try {
+                        feedback = JSON.parse(response);
+                    } catch (error) {
+                        feedback = response;
+                    }
+                }
+
+                // Returning formatted feedback
+                return feedback;
+            }
+
+            // Method for getting last n messages
+            async get_last_n_messages(n, only_message = false) {
+
+                // Formatting mark_read parameter
+                let only_message_formatted;
+                if (only_message === true || only_message === 'true') { only_message_formatted = true; }
+                else if (only_message === false || only_message === 'false') { only_message_formatted = false; }
+                else { only_message_formatted = false; };
+
+                // Checking connection with server
+                if (this.server_up !== true) {
+                    return this.fetch_error_code;
+                }
+
+                // Formatting data
+                let id = Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000;
+                let data = {
+                    "id": id,
+                    "action": "get_last_n_messages",
+                    "options": {
+                        "seed": this.seed,
+                        "password": this.password,
+                        "only_message": only_message_formatted,
+                        "n": n,
+                    }
+                }
+                let stringified_data = JSON.stringify(data);
+
+                // Sending request
+                this.socket.send(stringified_data)
+
+                // Waiting for response from server
+                let response = await this.#await_response(id);
+
+                // Formatting feedback
+                let feedback;
+                if (response === this.error_code) {
+                    feedback = this.error_code;
+                }
+                if (response === this.fetch_error_code) {
+                    feedback = this.fetch_error_code;
+                }
+                else {
+                    try {
+                        feedback = JSON.parse(response);
+                    } catch (error) {
+                        feedback = response;
+                    }
+                }
+
+                // Returning formatted feedback
+                return feedback;
+            }
+
+            // Method for reading all unread messages
+            async read_all_unread_messages(nickname, only_message = false, mark_read = true) {
+
+                // Formatting mark_read parametera
+                let only_message_formatted;
+                if (only_message === true || only_message === 'true') { only_message_formatted = true; }
+                else if (only_message === false || only_message === 'false') { only_message_formatted = false; }
+                else { only_message_formatted = false; };
+
+                // Formatting mark_read parameter
+                let mark_read_formatted;
+                if (mark_read === true || mark_read === 'true') { mark_read_formatted = true; }
+                else if (mark_read === false || mark_read === 'false') { mark_read_formatted = false; }
+                else { mark_read_formatted = true; };
+
+                // Checking connection with server
+                if (this.server_up !== true) {
+                    return this.fetch_error_code;
+                }
+
+                // Formatting data
+                let id = Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000;
+                let data = {
+                    "id": id,
+                    "action": "read_all_unread_messages",
+                    "options": {
+                        "seed": this.seed,
+                        "password": this.password,
+                        "only_message": only_message_formatted,
+                        "mark_read": mark_read_formatted,
+                        "nickname": nickname,
+                    }
+                }
+                let stringified_data = JSON.stringify(data);
+
+                // Sending request
+                this.socket.send(stringified_data)
+
+                // Waiting for response from server
+                let response = await this.#await_response(id);
+
+                // Formatting feedback
+                let feedback;
+                if (response === this.error_code) {
+                    feedback = this.error_code;
+                }
+                else if (response === this.fetch_error_code) {
+                    feedback = this.fetch_error_code;
+                }
+                else if (response === this.empty_code) {
+                    feedback = this.empty_code;
+                }
+                else {
+                    try {
+                        feedback = JSON.parse(response);
+                    } catch (error) {
+                        feedback = response;
+                    }
+                }
+
+                // Returning formatted feedback
+                return feedback;
+            }
+
+            // Method for reading all unread messages from nickname
+            async read_all_unread_messages_from_nickname(nickname, searchingnickname, only_message = false, mark_read = true) {
+
+                // Formatting mark_read parametera
+                let only_message_formatted;
+                if (only_message === true || only_message === 'true') { only_message_formatted = true; }
+                else if (only_message === false || only_message === 'false') { only_message_formatted = false; }
+                else { only_message_formatted = false; };
+
+                // Formatting mark_read parameter
+                let mark_read_formatted;
+                if (mark_read === true || mark_read === 'true') { mark_read_formatted = true; }
+                else if (mark_read === false || mark_read === 'false') { mark_read_formatted = false; }
+                else { mark_read_formatted = true; };
+
+                // Checking connection with server
+                if (this.server_up !== true) {
+                    return this.fetch_error_code;
+                }
+
+                // Formatting data
+                let id = Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000;
+                let data = {
+                    "id": id,
+                    "action": "read_all_unread_messages_from_nickname",
+                    "options": {
+                        "seed": this.seed,
+                        "password": this.password,
+                        "only_message": only_message_formatted,
+                        "mark_read": mark_read_formatted,
+                        "nickname": nickname,
+                        "searchingnickname": searchingnickname,
+                    }
+                }
+                let stringified_data = JSON.stringify(data);
+
+                // Sending request
+                this.socket.send(stringified_data)
+
+                // Waiting for response from server
+                let response = await this.#await_response(id);
+
+                // Formatting feedback
+                let feedback;
+                if (response === this.error_code) {
+                    feedback = this.error_code;
+                }
+                else if (response === this.fetch_error_code) {
+                    feedback = this.fetch_error_code;
+                }
+                else if (response === this.empty_code) {
+                    feedback = this.empty_code;
+                }
+                else {
+                    try {
+                        feedback = JSON.parse(response);
+                    } catch (error) {
+                        feedback = response;
+                    }
+                }
+
+                // Returning formatted feedback
+                return feedback;
+            }
+
+            // Method for reading first unread message
+            async read_first_unread_message(nickname, only_message = false, mark_read = true) {
+
+                // Formatting mark_read parametera
+                let only_message_formatted;
+                if (only_message === true || only_message === 'true') { only_message_formatted = true; }
+                else if (only_message === false || only_message === 'false') { only_message_formatted = false; }
+                else { only_message_formatted = false; };
+
+                // Formatting mark_read parameter
+                let mark_read_formatted;
+                if (mark_read === true || mark_read === 'true') { mark_read_formatted = true; }
+                else if (mark_read === false || mark_read === 'false') { mark_read_formatted = false; }
+                else { mark_read_formatted = true; };
+
+                // Checking connection with server
+                if (this.server_up !== true) {
+                    return this.fetch_error_code;
+                }
+
+                // Formatting data
+                let id = Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000;
+                let data = {
+                    "id": id,
+                    "action": "read_first_unread_message",
+                    "options": {
+                        "seed": this.seed,
+                        "password": this.password,
+                        "only_message": only_message_formatted,
+                        "mark_read": mark_read_formatted,
+                        "nickname": nickname,
+                    }
+                }
+                let stringified_data = JSON.stringify(data);
+
+                // Sending request
+                this.socket.send(stringified_data)
+
+                // Waiting for response from server
+                let response = await this.#await_response(id);
+
+                // Formatting feedback
+                let feedback;
+                if (response === this.error_code) {
+                    feedback = this.error_code;
+                }
+                else if (response === this.fetch_error_code) {
+                    feedback = this.fetch_error_code;
+                }
+                else if (response === this.empty_code) {
+                    feedback = this.empty_code;
+                }
+                else {
+                    try {
+                        if (only_message_formatted === false) {
+                            feedback = JSON.parse(response);
+                        }
+                        feedback = response;
+                    } catch (error) {
+                        feedback = response;
+                    }
+                }
+
+                // Returning formatted feedback
+                return feedback;
+            }
+
+            // Method for reading first unread messages from nickname
+            async read_first_unread_message_from_nickname(nickname, searchingnickname, only_message = false, mark_read = true) {
+
+                // Formatting mark_read parametera
+                let only_message_formatted;
+                if (only_message === true || only_message === 'true') { only_message_formatted = true; }
+                else if (only_message === false || only_message === 'false') { only_message_formatted = false; }
+                else { only_message_formatted = false; };
+
+                // Formatting mark_read parameter
+                let mark_read_formatted;
+                if (mark_read === true || mark_read === 'true') { mark_read_formatted = true; }
+                else if (mark_read === false || mark_read === 'false') { mark_read_formatted = false; }
+                else { mark_read_formatted = true; };
+
+                // Checking connection with server
+                if (this.server_up !== true) {
+                    return this.fetch_error_code;
+                }
+
+                // Formatting data
+                let id = Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000;
+                let data = {
+                    "id": id,
+                    "action": "read_first_unread_message_from_nickname",
+                    "options": {
+                        "seed": this.seed,
+                        "password": this.password,
+                        "only_message": only_message_formatted,
+                        "mark_read": mark_read_formatted,
+                        "nickname": nickname,
+                        "searchingnickname": searchingnickname,
+                    }
+                }
+                let stringified_data = JSON.stringify(data);
+
+                // Sending request
+                this.socket.send(stringified_data)
+
+                // Waiting for response from server
+                let response = await this.#await_response(id);
+
+                // Formatting feedback
+                let feedback;
+                if (response === this.error_code) {
+                    feedback = this.error_code;
+                }
+                else if (response === this.fetch_error_code) {
+                    feedback = this.fetch_error_code;
+                }
+                else if (response === this.empty_code) {
+                    feedback = this.empty_code;
+                }
+                else {
+                    try {
+                        if (only_message_formatted === false) {
+                            feedback = JSON.parse(response);
+                        }
+                        feedback = response;
+                    } catch (error) {
+                        feedback = response;
+                    }
+                }
+
+                // Returning formatted feedback
+                return feedback;
+            }
+
+            // Method for reading last unread message
+            async read_last_unread_message(nickname, only_message = false, mark_read = true) {
+
+                // Formatting mark_read parametera
+                let only_message_formatted;
+                if (only_message === true || only_message === 'true') { only_message_formatted = true; }
+                else if (only_message === false || only_message === 'false') { only_message_formatted = false; }
+                else { only_message_formatted = false; };
+
+                // Formatting mark_read parameter
+                let mark_read_formatted;
+                if (mark_read === true || mark_read === 'true') { mark_read_formatted = true; }
+                else if (mark_read === false || mark_read === 'false') { mark_read_formatted = false; }
+                else { mark_read_formatted = true; };
+
+                // Checking connection with server
+                if (this.server_up !== true) {
+                    return this.fetch_error_code;
+                }
+
+                // Formatting data
+                let id = Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000;
+                let data = {
+                    "id": id,
+                    "action": "read_last_unread_message",
+                    "options": {
+                        "seed": this.seed,
+                        "password": this.password,
+                        "only_message": only_message_formatted,
+                        "mark_read": mark_read_formatted,
+                        "nickname": nickname,
+                    }
+                }
+                let stringified_data = JSON.stringify(data);
+
+                // Sending request
+                this.socket.send(stringified_data)
+
+                // Waiting for response from server
+                let response = await this.#await_response(id);
+
+                // Formatting feedback
+                let feedback;
+                if (response === this.error_code) {
+                    feedback = this.error_code;
+                }
+                else if (response === this.fetch_error_code) {
+                    feedback = this.fetch_error_code;
+                }
+                else if (response === this.empty_code) {
+                    feedback = this.empty_code;
+                }
+                else {
+                    try {
+                        if (only_message_formatted === false) {
+                            feedback = JSON.parse(response);
+                        }
+                        feedback = response;
+                    } catch (error) {
+                        feedback = response;
+                    }
+                }
+
+                // Returning formatted feedback
+                return feedback;
+            }
+
+            // Method for reading last unread message from nickname
+            async read_last_unread_message_from_nickname(nickname, searchingnickname, only_message = false, mark_read = true) {
+
+                // Formatting mark_read parametera
+                let only_message_formatted;
+                if (only_message === true || only_message === 'true') { only_message_formatted = true; }
+                else if (only_message === false || only_message === 'false') { only_message_formatted = false; }
+                else { only_message_formatted = false; };
+
+                // Formatting mark_read parameter
+                let mark_read_formatted;
+                if (mark_read === true || mark_read === 'true') { mark_read_formatted = true; }
+                else if (mark_read === false || mark_read === 'false') { mark_read_formatted = false; }
+                else { mark_read_formatted = true; };
+
+                // Checking connection with server
+                if (this.server_up !== true) {
+                    return this.fetch_error_code;
+                }
+
+                // Formatting data
+                let id = Math.floor(Math.random() * (99999999 - 10000000 + 1)) + 10000000;
+                let data = {
+                    "id": id,
+                    "action": "read_last_unread_message_from_nickname",
+                    "options": {
+                        "seed": this.seed,
+                        "password": this.password,
+                        "only_message": only_message_formatted,
+                        "mark_read": mark_read_formatted,
+                        "nickname": nickname,
+                        "searchingnickname": searchingnickname,
+                    }
+                }
+                let stringified_data = JSON.stringify(data);
+
+                // Sending request
+                this.socket.send(stringified_data)
+
+                // Waiting for response from server
+                let response = await this.#await_response(id);
+
+                // Formatting feedback
+                let feedback;
+                if (response === this.error_code) {
+                    feedback = this.error_code;
+                }
+                else if (response === this.fetch_error_code) {
+                    feedback = this.fetch_error_code;
+                }
+                else if (response === this.empty_code) {
+                    feedback = this.empty_code;
+                }
+                else {
+                    try {
+                        if (only_message_formatted === false) {
+                            feedback = JSON.parse(response);
+                        }
+                        feedback = response;
+                    } catch (error) {
+                        feedback = response;
+                    }
+                }
+
+                // Returning formatted feedback
+                return feedback;
+            }
+        }
+    </script>
+</body>
+
+</html>
